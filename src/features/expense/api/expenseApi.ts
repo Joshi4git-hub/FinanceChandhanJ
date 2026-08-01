@@ -1,66 +1,63 @@
+import { db } from '../../../services/db';
 import type { ExpenseEntry, ExpenseFormData, CustomExpenseCategory } from '../types';
 
-let mockExpenses: ExpenseEntry[] = [
-  { id: '1', amount: 450, category: 'FOOD', paymentMethod: 'UPI', date: new Date().toISOString(), notes: 'Lunch with team' },
-  { id: '2', amount: 15000, category: 'RENT', paymentMethod: 'BANK', date: new Date(Date.now() - 86400000 * 5).toISOString() },
-  { id: '3', amount: 2500, category: 'SHOPPING', paymentMethod: 'CARD', date: new Date(Date.now() - 86400000 * 12).toISOString(), notes: 'New shoes' },
-];
+type StoredExpense = ExpenseEntry & { userId: string };
+const currentUserId = () => {
+  const userId = localStorage.getItem('finpilot_user_id') || sessionStorage.getItem('finpilot_user_id');
+  if (!userId) throw new Error('Please sign in to manage expenses.');
+  return userId;
+};
+const categoryKey = (userId: string) => `finpilot_expense_categories_${userId}`;
 
-let mockCustomCategories: CustomExpenseCategory[] = [];
-
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const normalizeExpense = (record: StoredExpense): ExpenseEntry => {
+  const date = record.date || (record as any).dateSpent || new Date().toISOString();
+  return {
+    id: record.id,
+    amount: record.amount,
+    category: record.category,
+    paymentMethod: record.paymentMethod,
+    date,
+    notes: record.notes,
+  };
+};
 
 export const expenseApi = {
   async getExpenses(): Promise<ExpenseEntry[]> {
-    await delay(600);
-    return [...mockExpenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const records = await db.getAll<StoredExpense>('expenses', currentUserId());
+    return records
+      .map(normalizeExpense)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   },
 
   async getCustomCategories(): Promise<CustomExpenseCategory[]> {
-    await delay(200);
-    return [...mockCustomCategories];
+    return JSON.parse(localStorage.getItem(categoryKey(currentUserId())) || '[]') as CustomExpenseCategory[];
   },
 
   async addCustomCategory(category: Omit<CustomExpenseCategory, 'id'>): Promise<CustomExpenseCategory> {
-    await delay(400);
-    const newCategory = { ...category, id: `cat_${Date.now()}` };
-    mockCustomCategories.push(newCategory);
-    return newCategory;
+    const userId = currentUserId();
+    const categories = await this.getCustomCategories();
+    const created = { ...category, id: `cat_${crypto.randomUUID()}` };
+    localStorage.setItem(categoryKey(userId), JSON.stringify([...categories, created]));
+    return created;
   },
 
   async addExpense(data: ExpenseFormData): Promise<ExpenseEntry> {
-    await delay(800);
-    const newEntry: ExpenseEntry = {
-      id: `exp_${Date.now()}`,
-      amount: data.amount,
-      category: data.category as any,
-      paymentMethod: data.paymentMethod as any,
-      date: data.date,
-      notes: data.notes,
-    };
-    mockExpenses.push(newEntry);
-    return newEntry;
+    const entry: StoredExpense = { id: `exp_${crypto.randomUUID()}`, userId: currentUserId(), amount: data.amount, category: data.category, paymentMethod: data.paymentMethod as ExpenseEntry['paymentMethod'], date: data.date, notes: data.notes.trim() || undefined };
+    await db.put('expenses', entry);
+    return entry;
   },
 
   async updateExpense(id: string, data: ExpenseFormData): Promise<ExpenseEntry> {
-    await delay(800);
-    const index = mockExpenses.findIndex(exp => exp.id === id);
-    if (index === -1) throw new Error('Expense not found');
-    
-    mockExpenses[index] = {
-      ...mockExpenses[index],
-      amount: data.amount,
-      category: data.category as any,
-      paymentMethod: data.paymentMethod as any,
-      date: data.date,
-      notes: data.notes,
-    };
-    
-    return mockExpenses[index];
+    const existing = await db.get<StoredExpense>('expenses', id);
+    if (!existing || existing.userId !== currentUserId()) throw new Error('Expense not found');
+    const updated: StoredExpense = { ...existing, amount: data.amount, category: data.category, paymentMethod: data.paymentMethod as ExpenseEntry['paymentMethod'], date: data.date, notes: data.notes.trim() || undefined };
+    await db.put('expenses', updated);
+    return updated;
   },
 
   async deleteExpense(id: string): Promise<void> {
-    await delay(800);
-    mockExpenses = mockExpenses.filter(exp => exp.id !== id);
-  }
+    const entry = await db.get<StoredExpense>('expenses', id);
+    if (!entry || entry.userId !== currentUserId()) throw new Error('Expense not found');
+    await db.delete('expenses', id);
+  },
 };

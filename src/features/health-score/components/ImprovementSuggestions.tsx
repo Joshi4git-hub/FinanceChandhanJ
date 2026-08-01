@@ -23,8 +23,8 @@ export const ImprovementSuggestions: React.FC<ImprovementSuggestionsProps> = ({ 
 
         <ul className="space-y-4">
           {suggestions.map((suggestion, index) => (
-            <li key={index} className="flex items-start gap-3 bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
-              <ArrowRight size={18} className="text-primary-light shrink-0 mt-0.5" />
+            <li key={index} className="flex items-start gap-3 bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors dark:bg-white/5 dark:border-white/10">
+              <ArrowRight size={18} className="text-primary shrink-0 mt-0.5" />
               <span className="text-white/90 leading-relaxed text-sm">{suggestion}</span>
             </li>
           ))}

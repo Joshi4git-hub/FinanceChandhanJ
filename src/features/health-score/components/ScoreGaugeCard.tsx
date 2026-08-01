@@ -31,10 +31,10 @@ export const ScoreGaugeCard: React.FC<ScoreGaugeCardProps> = ({ score }) => {
   const strokeDashoffset = circumference - (score / 100) * circumference;
 
   return (
-    <div className={`bg-gradient-to-b ${bgClass} rounded-[32px] p-8 border border-white/50 shadow-sm flex flex-col items-center text-center`}>
+    <div className={`bg-gradient-to-b ${bgClass} dark:from-slate-900/80 dark:to-slate-950/80 rounded-[32px] p-8 border border-white/50 dark:border-white/10 shadow-sm flex flex-col items-center text-center`}>
       <div className="flex items-center gap-2 mb-8">
         <Activity size={24} className={colorClass} />
-        <h3 className="text-xl font-bold text-text-main">Health Score</h3>
+        <h3 className="text-xl font-bold text-text-main dark:text-white">Health Score</h3>
       </div>
 
       <div className="relative flex items-center justify-center w-48 h-48 mb-6">
@@ -47,7 +47,7 @@ export const ScoreGaugeCard: React.FC<ScoreGaugeCardProps> = ({ score }) => {
             stroke="currentColor"
             strokeWidth="12"
             fill="transparent"
-            className="text-gray-200"
+            className="text-gray-200 dark:text-slate-700"
           />
           {/* Animated progress */}
           <circle

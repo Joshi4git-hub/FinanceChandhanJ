@@ -1,56 +1,138 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { SplitLayout } from './SplitLayout';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { GoogleAuthModal } from '../../components/ui/GoogleAuthModal';
+import { useAuth } from '../../context/AuthContext';
+import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(false);
+  const { login, loginWithGoogle, resetPasswordRequest } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Google Modal
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
+
+  // Forgot password modal
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetStatus, setResetStatus] = useState<{ success?: boolean; message?: string }>({});
+  const [isResetting, setIsResetting] = useState(false);
+
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
     setIsLoading(true);
-    // Simulate login
-    setTimeout(() => {
-      setIsLoading(false);
-      navigate('/dashboard');
-    }, 1200);
+
+    const res = await login(email, password, rememberMe);
+    setIsLoading(false);
+
+    if (res.success) {
+      navigate(from, { replace: true });
+    } else {
+      setErrorMessage(res.error || 'Failed to login');
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) return;
+    setIsResetting(true);
+    const result = await resetPasswordRequest(resetEmail);
+    setIsResetting(false);
+    setResetStatus(result);
+  };
+
+  const handleGoogleSubmit = async (gEmail: string, gName: string, gId: string, avatarUrl?: string) => {
+    setIsLoading(true);
+    const res = await loginWithGoogle(gEmail, gName, gId, avatarUrl);
+    setIsLoading(false);
+    if (res.success) {
+      navigate('/dashboard', { replace: true });
+    } else {
+      setErrorMessage(res.error || 'Google authentication failed');
+    }
   };
 
   return (
-    <SplitLayout 
+    <SplitLayout
       illustrationHeading="Take Control of Your Financial Future"
       illustrationSubheading="Track expenses, optimize debt, and achieve your financial goals with AI-powered insights."
     >
-      <div className="bg-white p-8 rounded-[24px] shadow-soft border border-gray-100">
+      <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-soft border border-gray-100 dark:border-gray-700 transition-colors">
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-text-main mb-2">Welcome Back</h2>
-          <p className="text-text-secondary text-sm">Enter your credentials to access your account.</p>
+          <h2 className="text-2xl font-bold text-text-main dark:text-white mb-2">Welcome Back</h2>
+          <p className="text-text-secondary dark:text-gray-400 text-sm">Enter your credentials to access your account.</p>
         </div>
 
+        {errorMessage && (
+          <div className="mb-6 p-4 bg-danger/10 border border-danger/20 rounded-2xl flex items-center gap-3 text-danger text-sm font-medium">
+            <AlertCircle size={18} className="shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-5">
-          <Input 
-            label="Email Address" 
-            type="email" 
+          <Input
+            label="Email Address"
+            type="email"
             placeholder="name@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <Input 
-            label="Password" 
-            type="password" 
+
+          <Input
+            label="Password"
+            type={showPassword ? 'text' : 'password'}
             placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
+            rightElement={
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="hover:text-primary transition-colors focus:outline-none"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            }
           />
 
           <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 cursor-pointer text-text-secondary">
-              <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary" />
+            <label className="flex items-center gap-2 cursor-pointer text-text-secondary dark:text-gray-400">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary"
+              />
               Remember Me
             </label>
-            <a href="#" className="font-medium text-primary hover:text-primary-hover transition-colors">
+            <button
+              type="button"
+              onClick={() => {
+                setResetEmail(email);
+                setResetStatus({});
+                setIsForgotModalOpen(true);
+              }}
+              className="font-medium text-primary hover:text-primary-hover transition-colors cursor-pointer"
+            >
               Forgot Password?
-            </a>
+            </button>
           </div>
 
           <Button type="submit" fullWidth isLoading={isLoading} className="mt-2">
@@ -60,14 +142,20 @@ export const LoginPage: React.FC = () => {
 
         <div className="mt-8 relative">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200"></div>
+            <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-4 bg-white text-text-secondary">OR</span>
+            <span className="px-4 bg-white dark:bg-gray-800 text-text-secondary dark:text-gray-400">OR</span>
           </div>
         </div>
 
-        <Button variant="outline" fullWidth className="mt-6 gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          fullWidth
+          onClick={() => setIsGoogleModalOpen(true)}
+          className="mt-6 gap-3 dark:border-gray-700 dark:text-white"
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -77,13 +165,60 @@ export const LoginPage: React.FC = () => {
           Continue with Google
         </Button>
 
-        <p className="mt-8 text-center text-sm text-text-secondary">
+        <p className="mt-8 text-center text-sm text-text-secondary dark:text-gray-400">
           Don't have an account?{' '}
           <Link to="/signup" className="font-medium text-primary hover:text-primary-hover">
             Create Account
           </Link>
         </p>
       </div>
+
+      {/* Google Sign In Modal */}
+      <GoogleAuthModal
+        isOpen={isGoogleModalOpen}
+        onClose={() => setIsGoogleModalOpen(false)}
+        onSelectAccount={handleGoogleSubmit}
+      />
+
+      {/* Forgot Password Modal */}
+      <Modal
+        isOpen={isForgotModalOpen}
+        onClose={() => setIsForgotModalOpen(false)}
+        title="Reset Your Password"
+      >
+        <form onSubmit={handleForgotPassword} className="space-y-4">
+          <p className="text-sm text-text-secondary dark:text-gray-400">
+            Enter your registered email address and we'll send you a password reset link.
+          </p>
+
+          {resetStatus.message && (
+            <div className={`p-4 rounded-2xl text-sm font-medium flex items-center gap-2 ${
+              resetStatus.success ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+            }`}>
+              {resetStatus.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+              {resetStatus.message}
+            </div>
+          )}
+
+          <Input
+            label="Email Address"
+            type="email"
+            placeholder="name@example.com"
+            value={resetEmail}
+            onChange={(e) => setResetEmail(e.target.value)}
+            required
+          />
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" type="button" onClick={() => setIsForgotModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={isResetting}>
+              Send Reset Link
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </SplitLayout>
   );
 };

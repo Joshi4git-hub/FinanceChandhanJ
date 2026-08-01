@@ -28,12 +28,12 @@ export const useHealthScore = () => {
 
       // Aggregate Income (Filtering to current month for simplicity, though a real app might average last 3 months)
       const monthlyIncome = incomesRes.data
-        .filter(i => i.dateReceived.startsWith(currentMonth))
+        .filter((i) => typeof i.dateReceived === 'string' && i.dateReceived.startsWith(currentMonth))
         .reduce((sum, i) => sum + i.amount, 0);
 
       // Aggregate Expenses
       const monthlyExpenses = expenses
-        .filter(e => e.date.startsWith(currentMonth))
+        .filter((e) => typeof e.date === 'string' && e.date.startsWith(currentMonth))
         .reduce((sum, e) => sum + e.amount, 0);
 
       // Aggregate Debts

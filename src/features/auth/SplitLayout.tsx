@@ -25,7 +25,7 @@ export const SplitLayout: React.FC<SplitLayoutProps> = ({
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
             </div>
-            <span className="font-bold text-xl tracking-tight">FinPilot AI</span>
+            <span className="font-bold text-xl tracking-tight">Spendora</span>
           </div>
 
           <h1 className="text-4xl lg:text-5xl font-bold mb-6 leading-tight">
@@ -61,7 +61,7 @@ export const SplitLayout: React.FC<SplitLayoutProps> = ({
           {/* Mobile Logo */}
           <div className="flex lg:hidden items-center gap-2 mb-10 text-primary justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
-            <span className="font-bold text-xl tracking-tight">FinPilot AI</span>
+            <span className="font-bold text-xl tracking-tight">Spendora</span>
           </div>
           {children}
         </div>

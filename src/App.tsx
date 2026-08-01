@@ -8,6 +8,11 @@ import { BudgetOverview } from './features/budget/components/BudgetOverview/Budg
 import { DebtOverview } from './features/debt/components/DebtOverview/DebtOverview';
 import { OptimizerDashboard } from './features/debt-optimizer/components/OptimizerDashboard';
 import { HealthScoreDashboard } from './features/health-score/components/HealthScoreDashboard';
+import { ProfilePage } from './features/profile/ProfilePage';
+import { ProtectedRoute } from './features/auth/ProtectedRoute';
+import { GoalsPage } from './features/goals/GoalsPage';
+import { ReportsPage } from './features/reports/ReportsPage';
+import { AIAssistantPage } from './features/ai-assistant/AIAssistantPage';
 
 function App() {
   return (
@@ -15,13 +20,17 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/dashboard/income" element={<IncomeOverview />} />
-        <Route path="/dashboard/expenses" element={<ExpenseOverview />} />
-        <Route path="/dashboard/budgets" element={<BudgetOverview />} />
-        <Route path="/dashboard/debts" element={<DebtOverview />} />
-        <Route path="/dashboard/debt-optimizer" element={<OptimizerDashboard />} />
-        <Route path="/dashboard/health" element={<HealthScoreDashboard />} />
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/dashboard/income" element={<ProtectedRoute><IncomeOverview /></ProtectedRoute>} />
+        <Route path="/dashboard/expenses" element={<ProtectedRoute><ExpenseOverview /></ProtectedRoute>} />
+        <Route path="/dashboard/budgets" element={<ProtectedRoute><BudgetOverview /></ProtectedRoute>} />
+        <Route path="/dashboard/debts" element={<ProtectedRoute><DebtOverview /></ProtectedRoute>} />
+        <Route path="/dashboard/debt-optimizer" element={<ProtectedRoute><OptimizerDashboard /></ProtectedRoute>} />
+        <Route path="/dashboard/health" element={<ProtectedRoute><HealthScoreDashboard /></ProtectedRoute>} />
+        <Route path="/dashboard/settings" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/dashboard/goals" element={<ProtectedRoute><GoalsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/ai" element={<ProtectedRoute><AIAssistantPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
