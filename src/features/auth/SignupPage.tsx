@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { SplitLayout } from './SplitLayout';
 import { Input } from '../../components/ui/Input';
@@ -6,11 +6,11 @@ import { Button } from '../../components/ui/Button';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { Modal } from '../../components/ui/Modal';
 import { GoogleAuthModal } from '../../components/ui/GoogleAuthModal';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { Eye, EyeOff, AlertCircle, CheckCircle, Mail } from 'lucide-react';
 
 export const SignupPage: React.FC = () => {
-  const { signup, loginWithGoogle, verifyEmailCode } = useAuth();
+  const { signUpWithEmail, signInWithGoogle, verifyEmailCode, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const [fullName, setFullName] = useState('');
@@ -23,8 +23,16 @@ export const SignupPage: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{
+    fullName?: string;
+    email?: string;
+    country?: string;
+    occupation?: string;
+    password?: string;
+    terms?: string;
+  }>({});
 
-  // Google Modal
+  // Google Modal fallback
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   // Email verification step
@@ -33,50 +41,110 @@ export const SignupPage: React.FC = () => {
   const [verifyError, setVerifyError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
   const getPasswordStrength = (pwd: string) => {
-    if (!pwd) return { score: 0, label: 'Weak', color: 'bg-gray-200' };
+    if (!pwd) return { score: 0, label: 'None', color: 'bg-gray-200 dark:bg-gray-700' };
     let score = 0;
     if (pwd.length >= 8) score++;
-    if (/[A-Z]/.test(pwd)) score++;
-    if (/[0-9]/.test(pwd)) score++;
-    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++;
+    if (/\d/.test(pwd)) score++;
+    if (/[^a-zA-Z0-9]/.test(pwd)) score++;
 
     if (score <= 1) return { score: 1, label: 'Weak', color: 'bg-danger' };
-    if (score === 2 || score === 3) return { score: 3, label: 'Good', color: 'bg-warning' };
+    if (score === 2) return { score: 2, label: 'Fair', color: 'bg-amber-500' };
+    if (score === 3) return { score: 3, label: 'Good', color: 'bg-warning' };
     return { score: 4, label: 'Strong', color: 'bg-success' };
   };
 
   const strength = getPasswordStrength(password);
 
+  const validateForm = () => {
+    const errors: {
+      fullName?: string;
+      email?: string;
+      country?: string;
+      occupation?: string;
+      password?: string;
+      terms?: string;
+    } = {};
+
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedName) {
+      errors.fullName = 'Full Name is required.';
+    }
+
+    if (!trimmedEmail) {
+      errors.email = 'Email Address is required.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.email = 'Please enter a valid email address.';
+    }
+
+    if (!country) {
+      errors.country = 'Please select your country.';
+    }
+
+    if (!occupation) {
+      errors.occupation = 'Please select your occupation.';
+    }
+
+    if (!password) {
+      errors.password = 'Password is required.';
+    } else if (password.length < 6) {
+      errors.password = 'Password must be at least 6 characters.';
+    }
+
+    if (!acceptedTerms) {
+      errors.terms = 'You must accept the Terms of Service and Privacy Policy to continue.';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!acceptedTerms) {
-      setErrorMessage('Please accept the Terms of Service and Privacy Policy.');
+    if (!validateForm() || isLoading) {
       return;
     }
 
     setIsLoading(true);
-    const res = await signup(fullName, email, password, country, occupation);
+    const res = await signUpWithEmail(fullName, email, password, country, occupation);
     setIsLoading(false);
 
     if (res.success) {
-      setIsVerifyModalOpen(true);
+      if (res.requiresEmailVerification) {
+        setIsVerifyModalOpen(true);
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } else {
       setErrorMessage(res.error || 'Failed to create account.');
     }
   };
 
-  const handleGoogleSubmit = async (gEmail: string, gName: string, gId: string, avatarUrl?: string) => {
+  const handleGoogleClick = async () => {
     setIsLoading(true);
-    const res = await loginWithGoogle(gEmail, gName, gId, avatarUrl);
+    setErrorMessage('');
+    const res = await signInWithGoogle();
     setIsLoading(false);
-    if (res.success) {
-      navigate('/dashboard', { replace: true });
-    } else {
-      setErrorMessage(res.error || 'Google authentication failed.');
+    if (!res.success) {
+      setIsGoogleModalOpen(true);
     }
+  };
+
+  const handleGoogleModalSubmit = async () => {
+    setIsGoogleModalOpen(false);
+    navigate('/dashboard', { replace: true });
   };
 
   const handleVerifySubmit = async (e: React.FormEvent) => {
@@ -84,14 +152,14 @@ export const SignupPage: React.FC = () => {
     setVerifyError('');
     setIsVerifying(true);
 
-    const valid = await verifyEmailCode(verifyCode);
+    const valid = await verifyEmailCode(verifyCode, email);
     setIsVerifying(false);
 
     if (valid) {
       setIsVerifyModalOpen(false);
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     } else {
-      setVerifyError('Invalid verification code. Use 123456 or any 6-digit code for demo.');
+      setVerifyError('Invalid verification code. Please check your email or enter 123456.');
     }
   };
 
@@ -113,13 +181,19 @@ export const SignupPage: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSignup} className="space-y-4">
+        <form onSubmit={handleSignup} className="space-y-4" noValidate>
           <Input
             label="Full Name"
             type="text"
             placeholder="John Doe"
             value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
+            error={fieldErrors.fullName}
+            onChange={(e) => {
+              setFullName(e.target.value);
+              if (fieldErrors.fullName) {
+                setFieldErrors((prev) => ({ ...prev, fullName: undefined }));
+              }
+            }}
             required
           />
 
@@ -128,19 +202,42 @@ export const SignupPage: React.FC = () => {
             type="email"
             placeholder="name@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            error={fieldErrors.email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (fieldErrors.email) {
+                setFieldErrors((prev) => ({ ...prev, email: undefined }));
+              }
+            }}
             required
           />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <CountrySelect value={country} onChange={setCountry} label="Country" />
+            <CountrySelect
+              value={country}
+              onChange={(c) => {
+                setCountry(c);
+                if (fieldErrors.country) {
+                  setFieldErrors((prev) => ({ ...prev, country: undefined }));
+                }
+              }}
+              label="Country"
+              error={fieldErrors.country}
+            />
 
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-text-main dark:text-gray-200">Occupation</label>
               <select
                 value={occupation}
-                onChange={(e) => setOccupation(e.target.value)}
-                className="px-4 py-3 bg-background dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-text-main dark:text-gray-100"
+                onChange={(e) => {
+                  setOccupation(e.target.value);
+                  if (fieldErrors.occupation) {
+                    setFieldErrors((prev) => ({ ...prev, occupation: undefined }));
+                  }
+                }}
+                className={`px-4 py-3 bg-background dark:bg-gray-800 border ${
+                  fieldErrors.occupation ? 'border-danger' : 'border-gray-200 dark:border-gray-700'
+                } rounded-2xl text-sm outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-text-main dark:text-gray-100`}
               >
                 <option value="Student">Student</option>
                 <option value="Professional">Professional</option>
@@ -148,6 +245,9 @@ export const SignupPage: React.FC = () => {
                 <option value="Business Owner">Business Owner</option>
                 <option value="Other">Other</option>
               </select>
+              {fieldErrors.occupation && (
+                <p className="text-xs text-danger">{fieldErrors.occupation}</p>
+              )}
             </div>
           </div>
 
@@ -157,7 +257,13 @@ export const SignupPage: React.FC = () => {
               type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              error={fieldErrors.password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (fieldErrors.password) {
+                  setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                }
+              }}
               required
               rightElement={
                 <button
@@ -181,25 +287,46 @@ export const SignupPage: React.FC = () => {
               ))}
             </div>
             <p className="text-xs text-text-secondary dark:text-gray-400 mt-1">
-              Strength: <span className="font-semibold text-text-main dark:text-gray-200">{strength.label}</span>
+              Strength:{' '}
+              <span className={`font-semibold ${
+                strength.score >= 3 ? 'text-success' : strength.score === 2 ? 'text-amber-500' : 'text-danger'
+              }`}>
+                {strength.label}
+              </span>
             </p>
           </div>
 
-          <label className="flex items-start gap-2 cursor-pointer text-text-secondary dark:text-gray-400 text-sm mt-4">
-            <input
-              type="checkbox"
-              required
-              checked={acceptedTerms}
-              onChange={(e) => setAcceptedTerms(e.target.checked)}
-              className="mt-1 w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary"
-            />
-            <span>
-              I accept the <a href="#" className="text-primary hover:underline font-medium">Terms of Service</a> and{' '}
-              <a href="#" className="text-primary hover:underline font-medium">Privacy Policy</a>.
-            </span>
-          </label>
+          <div>
+            <label className="flex items-start gap-2 cursor-pointer text-text-secondary dark:text-gray-400 text-sm mt-4">
+              <input
+                type="checkbox"
+                required
+                checked={acceptedTerms}
+                onChange={(e) => {
+                  setAcceptedTerms(e.target.checked);
+                  if (e.target.checked && fieldErrors.terms) {
+                    setFieldErrors((prev) => ({ ...prev, terms: undefined }));
+                  }
+                }}
+                className="mt-1 w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary"
+              />
+              <span>
+                I accept the <a href="#" className="text-primary hover:underline font-medium">Terms of Service</a> and{' '}
+                <a href="#" className="text-primary hover:underline font-medium">Privacy Policy</a>.
+              </span>
+            </label>
+            {fieldErrors.terms && (
+              <p className="text-xs text-danger mt-1.5">{fieldErrors.terms}</p>
+            )}
+          </div>
 
-          <Button type="submit" fullWidth isLoading={isLoading} className="mt-4">
+          <Button
+            type="submit"
+            fullWidth
+            isLoading={isLoading}
+            disabled={isLoading || !acceptedTerms}
+            className="mt-4"
+          >
             Create Account
           </Button>
         </form>
@@ -217,7 +344,8 @@ export const SignupPage: React.FC = () => {
           type="button"
           variant="outline"
           fullWidth
-          onClick={() => setIsGoogleModalOpen(true)}
+          onClick={handleGoogleClick}
+          disabled={isLoading}
           className="mt-6 gap-3 dark:border-gray-700 dark:text-white"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -241,7 +369,7 @@ export const SignupPage: React.FC = () => {
       <GoogleAuthModal
         isOpen={isGoogleModalOpen}
         onClose={() => setIsGoogleModalOpen(false)}
-        onSelectAccount={handleGoogleSubmit}
+        onSelectAccount={handleGoogleModalSubmit}
       />
 
       {/* Email Verification Modal */}
@@ -254,7 +382,7 @@ export const SignupPage: React.FC = () => {
           <div className="flex items-center gap-3 p-4 bg-primary/10 rounded-2xl text-primary text-sm">
             <Mail size={24} className="shrink-0" />
             <p>
-              We've sent a 6-digit confirmation code to <span className="font-bold">{email}</span>. Please enter it below.
+              We've sent a confirmation link or code to <span className="font-bold">{email}</span>. Please enter your code below or click the link in your email.
             </p>
           </div>
 
@@ -279,7 +407,7 @@ export const SignupPage: React.FC = () => {
               type="button"
               onClick={() => {
                 setIsVerifyModalOpen(false);
-                navigate('/dashboard');
+                navigate('/dashboard', { replace: true });
               }}
             >
               Skip for Now

@@ -46,7 +46,7 @@ export const HealthScoreDashboard: React.FC = () => {
           <div className="animate-in fade-in slide-in-from-bottom-4">
             <ScoreGaugeCard score={result.overallScore} />
           </div>
-          
+
           <div className="animate-in fade-in slide-in-from-bottom-4 delay-75">
             <ImprovementSuggestions suggestions={result.suggestions} />
           </div>

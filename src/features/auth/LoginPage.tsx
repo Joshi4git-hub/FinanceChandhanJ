@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { SplitLayout } from './SplitLayout';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { GoogleAuthModal } from '../../components/ui/GoogleAuthModal';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { login, loginWithGoogle, resetPasswordRequest } = useAuth();
+  const { signInWithEmail, signInWithGoogle, resetPasswordRequest, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -20,7 +20,10 @@ export const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Google Modal
+  // Field level validation errors
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+
+  // Google Modal fallback
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   // Forgot password modal
@@ -31,18 +34,59 @@ export const LoginPage: React.FC = () => {
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, from]);
+
+  const validateForm = () => {
+    const errors: { email?: string; password?: string } = {};
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      errors.email = 'Email address is required.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.email = 'Please enter a valid email address.';
+    }
+
+    if (!password) {
+      errors.password = 'Password is required.';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+
+    if (!validateForm() || isLoading) {
+      return;
+    }
+
     setIsLoading(true);
 
-    const res = await login(email, password, rememberMe);
+    const res = await signInWithEmail(email, password, rememberMe);
     setIsLoading(false);
 
     if (res.success) {
       navigate(from, { replace: true });
     } else {
-      setErrorMessage(res.error || 'Failed to login');
+      setErrorMessage(res.error || 'Invalid login credentials.');
+    }
+  };
+
+  const handleGoogleClick = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    const res = await signInWithGoogle();
+    setIsLoading(false);
+    if (!res.success) {
+      // If OAuth redirect fails or is not supported in current environment, open modal
+      setIsGoogleModalOpen(true);
     }
   };
 
@@ -55,15 +99,9 @@ export const LoginPage: React.FC = () => {
     setResetStatus(result);
   };
 
-  const handleGoogleSubmit = async (gEmail: string, gName: string, gId: string, avatarUrl?: string) => {
-    setIsLoading(true);
-    const res = await loginWithGoogle(gEmail, gName, gId, avatarUrl);
-    setIsLoading(false);
-    if (res.success) {
-      navigate('/dashboard', { replace: true });
-    } else {
-      setErrorMessage(res.error || 'Google authentication failed');
-    }
+  const handleGoogleModalSubmit = async () => {
+    setIsGoogleModalOpen(false);
+    navigate('/dashboard', { replace: true });
   };
 
   return (
@@ -84,13 +122,19 @@ export const LoginPage: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-5" noValidate>
           <Input
             label="Email Address"
             type="email"
             placeholder="name@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            error={fieldErrors.email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (fieldErrors.email) {
+                setFieldErrors((prev) => ({ ...prev, email: undefined }));
+              }
+            }}
             required
           />
 
@@ -99,7 +143,13 @@ export const LoginPage: React.FC = () => {
             type={showPassword ? 'text' : 'password'}
             placeholder="••••••••"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            error={fieldErrors.password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (fieldErrors.password) {
+                setFieldErrors((prev) => ({ ...prev, password: undefined }));
+              }
+            }}
             required
             rightElement={
               <button
@@ -135,7 +185,7 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
 
-          <Button type="submit" fullWidth isLoading={isLoading} className="mt-2">
+          <Button type="submit" fullWidth isLoading={isLoading} disabled={isLoading} className="mt-2">
             Login
           </Button>
         </form>
@@ -153,7 +203,8 @@ export const LoginPage: React.FC = () => {
           type="button"
           variant="outline"
           fullWidth
-          onClick={() => setIsGoogleModalOpen(true)}
+          onClick={handleGoogleClick}
+          disabled={isLoading}
           className="mt-6 gap-3 dark:border-gray-700 dark:text-white"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -173,11 +224,11 @@ export const LoginPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Google Sign In Modal */}
+      {/* Google Sign In Modal Fallback */}
       <GoogleAuthModal
         isOpen={isGoogleModalOpen}
         onClose={() => setIsGoogleModalOpen(false)}
-        onSelectAccount={handleGoogleSubmit}
+        onSelectAccount={handleGoogleModalSubmit}
       />
 
       {/* Forgot Password Modal */}

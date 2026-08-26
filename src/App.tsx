@@ -13,11 +13,13 @@ import { ProtectedRoute } from './features/auth/ProtectedRoute';
 import { GoalsPage } from './features/goals/GoalsPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { AIAssistantPage } from './features/ai-assistant/AIAssistantPage';
+import { AuthCallback } from './features/auth/AuthCallback';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
