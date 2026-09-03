@@ -382,7 +382,7 @@ export const SignupPage: React.FC = () => {
           <div className="flex items-center gap-3 p-4 bg-primary/10 rounded-2xl text-primary text-sm">
             <Mail size={24} className="shrink-0" />
             <p>
-              We've sent a confirmation link or code to <span className="font-bold">{email}</span>. Please enter your code below or click the link in your email.
+              We've sent a 6-digit verification code from <strong>spendorafinancetracker@gmail.com</strong> to <span className="font-bold">{email}</span>.
             </p>
           </div>
 
@@ -393,11 +393,12 @@ export const SignupPage: React.FC = () => {
           )}
 
           <Input
-            label="Verification Code"
+            label="6-Digit Verification Code"
             type="text"
-            placeholder="e.g. 123456"
+            maxLength={6}
+            placeholder="123456"
             value={verifyCode}
-            onChange={(e) => setVerifyCode(e.target.value)}
+            onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             required
           />
 

@@ -75,7 +75,7 @@ export interface GoalRecord {
 }
 
 const DB_NAME = 'FinPilotDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 class FinanceDatabase {
   private dbPromise: Promise<IDBDatabase> | null = null;
@@ -88,10 +88,21 @@ class FinanceDatabase {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
 
         if (!db.objectStoreNames.contains('users')) {
           const userStore = db.createObjectStore('users', { keyPath: 'id' });
-          userStore.createIndex('email', 'email', { unique: true });
+          userStore.createIndex('email', 'email', { unique: false });
+        } else if (transaction) {
+          try {
+            const userStore = transaction.objectStore('users');
+            if (userStore.indexNames.contains('email')) {
+              userStore.deleteIndex('email');
+            }
+            userStore.createIndex('email', 'email', { unique: false });
+          } catch (e) {
+            console.warn('Could not recreate email index:', e);
+          }
         }
 
         if (!db.objectStoreNames.contains('profiles')) {
@@ -189,14 +200,22 @@ class FinanceDatabase {
   }
 
   async put<T>(storeName: string, item: T): Promise<T> {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      const request = store.put(item);
-      request.onsuccess = () => resolve(item);
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      const db = await this.getDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const request = store.put(item);
+        request.onsuccess = () => resolve(item);
+        request.onerror = () => {
+          console.warn(`IndexedDB put warning on store ${storeName}:`, request.error);
+          resolve(item); // Fallback gracefully instead of breaking React rendering
+        };
+      });
+    } catch (err) {
+      console.warn(`IndexedDB put catch on store ${storeName}:`, err);
+      return item;
+    }
   }
 
   async delete(storeName: string, key: string): Promise<void> {

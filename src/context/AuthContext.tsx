@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase, type ProfileRow } from '../lib/supabase';
 import { db, type UserAccount, type UserProfile } from '../services/db';
+import { authApi } from '../services/authApi';
 
 export interface AuthContextType {
   user: UserAccount | null;
@@ -18,6 +19,8 @@ export interface AuthContextType {
     country?: string,
     occupation?: string
   ) => Promise<{ success: boolean; error?: string; requiresEmailVerification?: boolean }>;
+  sendLoginOtp: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  verifyLoginOtp: (email: string, otp: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
   signInWithGoogle: (redirectTo?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   // Backwards compatibility aliases
@@ -33,6 +36,7 @@ export interface AuthContextType {
   logout: () => void;
   updateProfile: (updated: Partial<UserProfile> & { fullName?: string }) => Promise<boolean>;
   resetPasswordRequest: (email: string) => Promise<{ success: boolean; message: string }>;
+  resetPasswordWithOtp: (email: string, otp: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   verifyEmailCode: (code: string, email?: string) => Promise<boolean>;
   refreshProfile: () => Promise<void>;
 }
@@ -438,34 +442,131 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 6. Reset Password Request
-  const resetPasswordRequest = async (email: string) => {
+  // 6. Send Login OTP via Node.js Gmail SMTP
+  const sendLoginOtp = async (email: string) => {
     try {
       const cleanEmail = email.toLowerCase().trim();
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/dashboard/settings`,
-      });
-
-      if (error) {
-        return { success: false, message: error.message };
-      }
-
+      const res = await authApi.sendLoginOtp(cleanEmail);
       return {
-        success: true,
-        message: `Password reset link sent to ${cleanEmail}. Check your inbox!`,
+        success: res.success,
+        message: res.message || `Login code sent to ${cleanEmail}. Check your inbox!`,
       };
     } catch (err: any) {
       return {
         success: false,
-        message: err?.message || 'Unable to send password reset email.',
+        error: err?.message || 'Failed to send login verification code.',
       };
     }
   };
 
-  // 7. Verify Email OTP / Code
+  // 7. Verify Login OTP via Node.js Backend
+  const verifyLoginOtp = async (email: string, otp: string, rememberMe: boolean = true) => {
+    try {
+      const cleanEmail = email.toLowerCase().trim();
+      const res = await authApi.verifyLoginOtp(cleanEmail, otp);
+
+      if (res.success && res.token) {
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem(TOKEN_STORAGE_KEY, res.token);
+        const userId = res.user?.id || `usr_${Date.now()}`;
+        storage.setItem(USER_ID_KEY, userId);
+
+        const account: UserAccount = {
+          id: userId,
+          email: cleanEmail,
+          fullName: res.user?.user_metadata?.full_name || cleanEmail.split('@')[0] || 'User',
+          passwordHash: '',
+          isVerified: true,
+          createdAt: new Date().toISOString(),
+        };
+
+        await db.put('users', account);
+        setUser(account);
+        setToken(res.token);
+
+        let userProfile = await db.get<UserProfile>('profiles', userId);
+        if (!userProfile) {
+          userProfile = {
+            userId,
+            country: 'India',
+            currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            occupation: 'Professional',
+            monthlyIncome: 65000,
+            savingsGoal: 100000,
+            emailNotifications: true,
+            pushNotifications: true,
+            weeklyReports: true,
+            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          };
+          await db.put('profiles', userProfile);
+          await db.seedUserData(userId);
+        }
+        setProfile(userProfile);
+        return { success: true };
+      }
+
+      return { success: false, error: 'Failed to verify authentication code.' };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Invalid or expired verification code.',
+      };
+    }
+  };
+
+  // 8. Reset Password Request (Custom Spendora Email via Gmail SMTP)
+  const resetPasswordRequest = async (email: string) => {
+    try {
+      const cleanEmail = email.toLowerCase().trim();
+      const res = await authApi.forgotPassword(cleanEmail);
+      return {
+        success: res.success,
+        message: res.message || `Password reset code sent to ${cleanEmail}. Check your inbox!`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Unable to send password reset code.',
+      };
+    }
+  };
+
+  // 9. Reset Password with OTP via Node.js Backend & Supabase
+  const resetPasswordWithOtp = async (email: string, otp: string, newPassword: string) => {
+    try {
+      const cleanEmail = email.toLowerCase().trim();
+      const res = await authApi.resetPassword({ email: cleanEmail, otp, newPassword });
+      return {
+        success: res.success,
+        message: res.message || 'Password reset successfully! You can now log in.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Failed to reset password.',
+      };
+    }
+  };
+
+  // 10. Verify Email OTP / Code
   const verifyEmailCode = async (code: string, emailParam?: string) => {
     const targetEmail = emailParam || user?.email || supabaseUser?.email;
     if (targetEmail && code.length >= 6) {
+      try {
+        const verifyRes = await authApi.verifyLoginOtp(targetEmail, code.trim());
+        if (verifyRes.success) {
+          if (user) {
+            const updated = { ...user, isVerified: true };
+            await db.put('users', updated);
+            setUser(updated);
+          }
+          return true;
+        }
+      } catch (e) {
+        console.warn('Backend verifyOtp error (falling back to client verify):', e);
+      }
+
       try {
         const { data, error } = await supabase.auth.verifyOtp({
           email: targetEmail,
@@ -567,6 +668,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         signInWithEmail,
         signUpWithEmail,
+        sendLoginOtp,
+        verifyLoginOtp,
         signInWithGoogle,
         signOut,
         login,
@@ -575,6 +678,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         updateProfile,
         resetPasswordRequest,
+        resetPasswordWithOtp,
         verifyEmailCode,
         refreshProfile,
       }}

@@ -6,29 +6,48 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { GoogleAuthModal } from '../../components/ui/GoogleAuthModal';
 import { useAuth } from '../../hooks/useAuth';
-import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, CheckCircle, Mail, KeyRound, ArrowRight } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { signInWithEmail, signInWithGoogle, resetPasswordRequest, isAuthenticated } = useAuth();
+  const {
+    signInWithEmail,
+    signInWithGoogle,
+    sendLoginOtp,
+    verifyLoginOtp,
+    resetPasswordRequest,
+    resetPasswordWithOtp,
+    isAuthenticated,
+  } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Login Mode: 'password' | 'otp'
+  const [loginMode, setLoginMode] = useState<'password' | 'otp'>('password');
+
+  // Form Fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; otp?: string }>({});
 
-  // Field level validation errors
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  // OTP Login State
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Google Modal fallback
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   // Forgot password modal
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [resetStep, setResetStep] = useState<1 | 2>(1); // 1: Email, 2: OTP + New Password
   const [resetEmail, setResetEmail] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetStatus, setResetStatus] = useState<{ success?: boolean; message?: string }>({});
   const [isResetting, setIsResetting] = useState(false);
 
@@ -41,8 +60,16 @@ export const LoginPage: React.FC = () => {
     }
   }, [isAuthenticated, navigate, from]);
 
+  // Cooldown countdown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown((prev) => prev - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
   const validateForm = () => {
-    const errors: { email?: string; password?: string } = {};
+    const errors: { email?: string; password?: string; otp?: string } = {};
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail) {
@@ -51,8 +78,12 @@ export const LoginPage: React.FC = () => {
       errors.email = 'Please enter a valid email address.';
     }
 
-    if (!password) {
+    if (loginMode === 'password' && !password) {
       errors.password = 'Password is required.';
+    }
+
+    if (loginMode === 'otp' && otpSent && (!otpCode || otpCode.trim().length !== 6)) {
+      errors.otp = 'Please enter the 6-digit code received in your email.';
     }
 
     setFieldErrors(errors);
@@ -69,13 +100,48 @@ export const LoginPage: React.FC = () => {
 
     setIsLoading(true);
 
-    const res = await signInWithEmail(email, password, rememberMe);
-    setIsLoading(false);
+    if (loginMode === 'password') {
+      const res = await signInWithEmail(email, password, rememberMe);
+      setIsLoading(false);
 
-    if (res.success) {
-      navigate(from, { replace: true });
+      if (res.success) {
+        navigate(from, { replace: true });
+      } else {
+        setErrorMessage(res.error || 'Invalid login credentials.');
+      }
     } else {
-      setErrorMessage(res.error || 'Invalid login credentials.');
+      // OTP Login Flow
+      if (!otpSent) {
+        const res = await sendLoginOtp(email);
+        setIsLoading(false);
+        if (res.success) {
+          setOtpSent(true);
+          setResendCooldown(60);
+        } else {
+          setErrorMessage(res.error || 'Failed to send OTP code.');
+        }
+      } else {
+        const res = await verifyLoginOtp(email, otpCode, rememberMe);
+        setIsLoading(false);
+        if (res.success) {
+          navigate(from, { replace: true });
+        } else {
+          setErrorMessage(res.error || 'Invalid or expired OTP code.');
+        }
+      }
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || isLoading) return;
+    setIsLoading(true);
+    setErrorMessage('');
+    const res = await sendLoginOtp(email);
+    setIsLoading(false);
+    if (res.success) {
+      setResendCooldown(60);
+    } else {
+      setErrorMessage(res.error || 'Failed to resend code.');
     }
   };
 
@@ -85,18 +151,52 @@ export const LoginPage: React.FC = () => {
     const res = await signInWithGoogle();
     setIsLoading(false);
     if (!res.success) {
-      // If OAuth redirect fails or is not supported in current environment, open modal
       setIsGoogleModalOpen(true);
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  // 1. Request Password Reset Code
+  const handleForgotRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetEmail) return;
+    if (!resetEmail || !resetEmail.includes('@')) {
+      setResetStatus({ success: false, message: 'Please enter a valid email address.' });
+      return;
+    }
     setIsResetting(true);
+    setResetStatus({});
     const result = await resetPasswordRequest(resetEmail);
     setIsResetting(false);
     setResetStatus(result);
+    if (result.success) {
+      setResetStep(2);
+    }
+  };
+
+  // 2. Submit OTP + New Password
+  const handleForgotSubmitNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetOtp || resetOtp.length !== 6) {
+      setResetStatus({ success: false, message: 'Please enter the 6-digit reset code.' });
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setResetStatus({ success: false, message: 'New password must be at least 6 characters.' });
+      return;
+    }
+
+    setIsResetting(true);
+    setResetStatus({});
+    const result = await resetPasswordWithOtp(resetEmail, resetOtp, newPassword);
+    setIsResetting(false);
+    setResetStatus(result);
+
+    if (result.success) {
+      setTimeout(() => {
+        setIsForgotModalOpen(false);
+        setResetStep(1);
+        setEmail(resetEmail);
+      }, 2500);
+    }
   };
 
   const handleGoogleModalSubmit = async () => {
@@ -110,9 +210,45 @@ export const LoginPage: React.FC = () => {
       illustrationSubheading="Track expenses, optimize debt, and achieve your financial goals with AI-powered insights."
     >
       <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-soft border border-gray-100 dark:border-gray-700 transition-colors">
-        <div className="mb-8">
+        <div className="mb-6">
           <h2 className="text-2xl font-bold text-text-main dark:text-white mb-2">Welcome Back</h2>
-          <p className="text-text-secondary dark:text-gray-400 text-sm">Enter your credentials to access your account.</p>
+          <p className="text-text-secondary dark:text-gray-400 text-sm">
+            Enter your credentials or use secure email OTP to access your account.
+          </p>
+        </div>
+
+        {/* Login Method Toggle */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 dark:bg-gray-700/50 rounded-xl mb-6">
+          <button
+            type="button"
+            onClick={() => {
+              setLoginMode('password');
+              setErrorMessage('');
+            }}
+            className={`py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+              loginMode === 'password'
+                ? 'bg-white dark:bg-gray-800 text-primary shadow-sm'
+                : 'text-text-secondary dark:text-gray-400 hover:text-text-main'
+            }`}
+          >
+            <KeyRound size={14} />
+            Password Login
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLoginMode('otp');
+              setErrorMessage('');
+            }}
+            className={`py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+              loginMode === 'otp'
+                ? 'bg-white dark:bg-gray-800 text-primary shadow-sm'
+                : 'text-text-secondary dark:text-gray-400 hover:text-text-main'
+            }`}
+          >
+            <Mail size={14} />
+            Email OTP Login
+          </button>
         </div>
 
         {errorMessage && (
@@ -128,6 +264,7 @@ export const LoginPage: React.FC = () => {
             type="email"
             placeholder="name@example.com"
             value={email}
+            disabled={loginMode === 'otp' && otpSent}
             error={fieldErrors.email}
             onChange={(e) => {
               setEmail(e.target.value);
@@ -138,56 +275,120 @@ export const LoginPage: React.FC = () => {
             required
           />
 
-          <Input
-            label="Password"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="••••••••"
-            value={password}
-            error={fieldErrors.password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              if (fieldErrors.password) {
-                setFieldErrors((prev) => ({ ...prev, password: undefined }));
-              }
-            }}
-            required
-            rightElement={
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="hover:text-primary transition-colors focus:outline-none"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            }
-          />
-
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 cursor-pointer text-text-secondary dark:text-gray-400">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary"
+          {loginMode === 'password' ? (
+            <>
+              <Input
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={password}
+                error={fieldErrors.password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) {
+                    setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                  }
+                }}
+                required
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="hover:text-primary transition-colors focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                }
               />
-              Remember Me
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                setResetEmail(email);
-                setResetStatus({});
-                setIsForgotModalOpen(true);
-              }}
-              className="font-medium text-primary hover:text-primary-hover transition-colors cursor-pointer"
-            >
-              Forgot Password?
-            </button>
-          </div>
 
-          <Button type="submit" fullWidth isLoading={isLoading} disabled={isLoading} className="mt-2">
-            Login
-          </Button>
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center gap-2 cursor-pointer text-text-secondary dark:text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary"
+                  />
+                  Remember Me
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetEmail(email);
+                    setResetStatus({});
+                    setResetStep(1);
+                    setIsForgotModalOpen(true);
+                  }}
+                  className="font-medium text-primary hover:text-primary-hover transition-colors cursor-pointer"
+                >
+                  Forgot Password?
+                </button>
+              </div>
+
+              <Button type="submit" fullWidth isLoading={isLoading} disabled={isLoading} className="mt-2">
+                Login
+              </Button>
+            </>
+          ) : (
+            <>
+              {otpSent ? (
+                <div className="space-y-4">
+                  <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl text-xs text-primary font-medium flex items-center justify-between">
+                    <span>Code sent to <strong>{email}</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOtpSent(false);
+                        setOtpCode('');
+                      }}
+                      className="underline font-bold ml-2"
+                    >
+                      Change
+                    </button>
+                  </div>
+
+                  <Input
+                    label="6-Digit Verification Code"
+                    type="text"
+                    maxLength={6}
+                    placeholder="123456"
+                    value={otpCode}
+                    error={fieldErrors.otp}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setOtpCode(val);
+                      if (fieldErrors.otp) {
+                        setFieldErrors((prev) => ({ ...prev, otp: undefined }));
+                      }
+                    }}
+                    required
+                  />
+
+                  <div className="flex items-center justify-between text-xs text-text-secondary dark:text-gray-400">
+                    <span>Did not receive the email?</span>
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={resendCooldown > 0 || isLoading}
+                      className={`font-semibold ${
+                        resendCooldown > 0 ? 'opacity-50 cursor-not-allowed text-gray-400' : 'text-primary hover:underline'
+                      }`}
+                    >
+                      {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
+                    </button>
+                  </div>
+
+                  <Button type="submit" fullWidth isLoading={isLoading} disabled={isLoading} className="mt-2">
+                    Verify & Login <ArrowRight size={16} />
+                  </Button>
+                </div>
+              ) : (
+                <Button type="submit" fullWidth isLoading={isLoading} disabled={isLoading} className="mt-2">
+                  Send Login Code <Mail size={16} />
+                </Button>
+              )}
+            </>
+          )}
         </form>
 
         <div className="mt-8 relative">
@@ -231,44 +432,108 @@ export const LoginPage: React.FC = () => {
         onSelectAccount={handleGoogleModalSubmit}
       />
 
-      {/* Forgot Password Modal */}
+      {/* Forgot Password Modal with 2-Step OTP Reset */}
       <Modal
         isOpen={isForgotModalOpen}
-        onClose={() => setIsForgotModalOpen(false)}
+        onClose={() => {
+          setIsForgotModalOpen(false);
+          setResetStep(1);
+        }}
         title="Reset Your Password"
       >
-        <form onSubmit={handleForgotPassword} className="space-y-4">
-          <p className="text-sm text-text-secondary dark:text-gray-400">
-            Enter your registered email address and we'll send you a password reset link.
-          </p>
+        {resetStep === 1 ? (
+          <form onSubmit={handleForgotRequestOtp} className="space-y-4">
+            <p className="text-sm text-text-secondary dark:text-gray-400">
+              Enter your registered email address. We'll send a 6-digit verification code from <strong>spendorafinancetracker@gmail.com</strong>.
+            </p>
 
-          {resetStatus.message && (
-            <div className={`p-4 rounded-2xl text-sm font-medium flex items-center gap-2 ${
-              resetStatus.success ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
-            }`}>
-              {resetStatus.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
-              {resetStatus.message}
+            {resetStatus.message && (
+              <div className={`p-4 rounded-2xl text-sm font-medium flex items-center gap-2 ${
+                resetStatus.success ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+              }`}>
+                {resetStatus.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                {resetStatus.message}
+              </div>
+            )}
+
+            <Input
+              label="Email Address"
+              type="email"
+              placeholder="name@example.com"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              required
+            />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" type="button" onClick={() => setIsForgotModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={isResetting}>
+                Send Reset Code
+              </Button>
             </div>
-          )}
+          </form>
+        ) : (
+          <form onSubmit={handleForgotSubmitNewPassword} className="space-y-4">
+            <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl text-xs text-primary font-medium flex items-center justify-between">
+              <span>Code sent to <strong>{resetEmail}</strong></span>
+              <button
+                type="button"
+                onClick={() => setResetStep(1)}
+                className="underline font-bold"
+              >
+                Change Email
+              </button>
+            </div>
 
-          <Input
-            label="Email Address"
-            type="email"
-            placeholder="name@example.com"
-            value={resetEmail}
-            onChange={(e) => setResetEmail(e.target.value)}
-            required
-          />
+            {resetStatus.message && (
+              <div className={`p-4 rounded-2xl text-sm font-medium flex items-center gap-2 ${
+                resetStatus.success ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+              }`}>
+                {resetStatus.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                {resetStatus.message}
+              </div>
+            )}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" type="button" onClick={() => setIsForgotModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={isResetting}>
-              Send Reset Link
-            </Button>
-          </div>
-        </form>
+            <Input
+              label="6-Digit Reset Code"
+              type="text"
+              maxLength={6}
+              placeholder="123456"
+              value={resetOtp}
+              onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              required
+            />
+
+            <Input
+              label="New Password"
+              type={showNewPassword ? 'text' : 'password'}
+              placeholder="At least 6 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="hover:text-primary transition-colors focus:outline-none"
+                >
+                  {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              }
+            />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" type="button" onClick={() => setResetStep(1)}>
+                Back
+              </Button>
+              <Button type="submit" isLoading={isResetting}>
+                Update Password
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </SplitLayout>
   );
