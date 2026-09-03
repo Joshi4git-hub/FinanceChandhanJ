@@ -25,8 +25,8 @@ export const IncomeFilters: React.FC<IncomeFiltersProps> = ({ activeCategory, on
             onClick={() => onCategoryChange(cat.id)}
             className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 border
               ${isActive 
-                ? 'bg-text-main text-white border-text-main shadow-soft' 
-                : 'bg-white text-text-secondary border-gray-200 hover:border-gray-300 hover:text-text-main'
+                ? 'bg-primary text-white border-primary shadow-soft dark:bg-primary/80 dark:hover:bg-primary/90' 
+                : 'bg-white dark:bg-slate-800 text-text-secondary dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:text-text-main dark:hover:text-white'
               }
             `}
           >

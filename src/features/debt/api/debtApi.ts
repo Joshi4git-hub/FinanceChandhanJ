@@ -1,57 +1,57 @@
+import { db } from '../../../services/db';
 import type { DebtEntry, DebtFormData } from '../types';
 
-let mockDebts: DebtEntry[] = [
-  {
-    id: '1',
-    name: 'HDFC Credit Card',
-    type: 'CREDIT_CARD',
-    principal: 50000,
-    remainingAmount: 25000,
-    interestRate: 42, // Ouch
-    emi: 2000,
-    dueDayOfMonth: 15
-  },
-  {
-    id: '2',
-    name: 'SBI Education Loan',
-    type: 'EDUCATION_LOAN',
-    principal: 800000,
-    remainingAmount: 650000,
-    interestRate: 8.5,
-    emi: 12000,
-    dueDayOfMonth: 5
-  }
-];
+type StoredDebt = DebtEntry & {
+  userId: string;
+  debtName?: string;
+  minimumMonthlyPayment?: number;
+  dueDateDay?: number;
+  type?: string;
+  totalAmount?: number;
+};
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const currentUserId = () => {
+  const userId = localStorage.getItem('finpilot_user_id') || sessionStorage.getItem('finpilot_user_id');
+  if (!userId) throw new Error('Please sign in to manage debts.');
+  return userId;
+};
+
+const normalizeDebt = (record: StoredDebt): DebtEntry => {
+  return {
+    id: record.id,
+    name: record.name || record.debtName || 'Unknown Debt',
+    type: (record.type as any) || 'PERSONAL_LOAN',
+    principal: record.principal ?? record.totalAmount ?? 0,
+    remainingAmount: record.remainingAmount ?? 0,
+    interestRate: record.interestRate ?? 0,
+    emi: record.emi ?? record.minimumMonthlyPayment,
+    dueDayOfMonth: record.dueDayOfMonth ?? record.dueDateDay ?? 1,
+  };
+};
 
 export const debtApi = {
   async getDebts(): Promise<DebtEntry[]> {
-    await delay(600);
-    return [...mockDebts];
+    const records = await db.getAll<StoredDebt>('debts', currentUserId());
+    return records.map(normalizeDebt);
   },
 
   async addDebt(data: DebtFormData): Promise<DebtEntry> {
-    await delay(800);
-    const newEntry: DebtEntry = {
-      id: `debt_${Date.now()}`,
-      ...data
-    };
-    mockDebts.push(newEntry);
-    return newEntry;
+    const entry: StoredDebt = { id: `debt_${crypto.randomUUID()}`, userId: currentUserId(), ...data };
+    await db.put('debts', entry);
+    return entry;
   },
 
   async updateDebt(id: string, data: DebtFormData): Promise<DebtEntry> {
-    await delay(800);
-    const index = mockDebts.findIndex(d => d.id === id);
-    if (index === -1) throw new Error('Debt not found');
-    
-    mockDebts[index] = { ...mockDebts[index], ...data };
-    return mockDebts[index];
+    const existing = await db.get<StoredDebt>('debts', id);
+    if (!existing || existing.userId !== currentUserId()) throw new Error('Debt not found');
+    const updated: StoredDebt = { ...existing, ...data };
+    await db.put('debts', updated);
+    return updated;
   },
 
   async deleteDebt(id: string): Promise<void> {
-    await delay(800);
-    mockDebts = mockDebts.filter(d => d.id !== id);
-  }
+    const entry = await db.get<StoredDebt>('debts', id);
+    if (!entry || entry.userId !== currentUserId()) throw new Error('Debt not found');
+    await db.delete('debts', id);
+  },
 };

@@ -47,7 +47,7 @@ export const MonthlyBudgetCard: React.FC<MonthlyBudgetCardProps> = ({
                 setEditValue(progress.limit.toString());
                 setIsEditing(true);
               }}
-              className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors backdrop-blur-md"
+              className="p-2 bg-white/10 dark:bg-slate-800/60 hover:bg-white/20 dark:hover:bg-slate-700/80 rounded-xl transition-colors backdrop-blur-md"
             >
               <Edit2 size={16} />
             </button>
@@ -68,10 +68,10 @@ export const MonthlyBudgetCard: React.FC<MonthlyBudgetCardProps> = ({
               />
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isUpdating} className="border-white/20 text-white hover:bg-white/10">
+              <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isUpdating} className="border-white/20 text-white hover:bg-white/10 dark:hover:bg-slate-700">
                 Cancel
               </Button>
-              <Button onClick={handleSave} isLoading={isUpdating} className="bg-white text-indigo-950 hover:bg-gray-100">
+              <Button onClick={handleSave} isLoading={isUpdating} className="bg-white dark:bg-slate-900 dark:text-white text-indigo-950 hover:bg-gray-100 dark:hover:bg-slate-700">
                 Save
               </Button>
             </div>

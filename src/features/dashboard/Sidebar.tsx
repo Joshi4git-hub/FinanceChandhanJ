@@ -1,9 +1,11 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, PieChart, CreditCard, Target, FileText, Bot, Settings, LogOut, Activity } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -18,16 +20,16 @@ export const Sidebar: React.FC = () => {
   ];
 
   const handleLogout = () => {
-    // In a real app, clear auth tokens here
+    logout();
     navigate('/login');
   };
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-100 flex flex-col h-screen sticky top-0">
-      <div className="h-20 flex items-center px-8 border-b border-gray-50">
+    <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 flex flex-col h-screen sticky top-0">
+      <div className="h-20 flex items-center px-8 border-b border-gray-50 dark:border-gray-800">
         <div className="flex items-center gap-2 text-primary">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
-          <span className="font-bold text-xl tracking-tight text-text-main">FinPilot AI</span>
+          <span className="font-bold text-xl tracking-tight text-text-main">Spendora</span>
         </div>
       </div>
       
@@ -38,6 +40,7 @@ export const Sidebar: React.FC = () => {
           <NavLink
             key={item.label}
             to={item.path}
+            end={item.path === '/dashboard'}
             className={({ isActive }) => 
               `flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200 font-medium ${
                 isActive 
@@ -52,7 +55,7 @@ export const Sidebar: React.FC = () => {
         ))}
       </div>
 
-      <div className="p-4 border-t border-gray-50 flex flex-col gap-1">
+      <div className="p-4 border-t border-gray-50 dark:border-gray-800 flex flex-col gap-1">
         <NavLink to="/dashboard/settings" className="flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200 font-medium text-text-secondary hover:bg-background hover:text-text-main">
           <Settings size={20} />
           Settings
